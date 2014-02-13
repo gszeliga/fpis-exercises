@@ -123,7 +123,7 @@ trait Stream[+A] {
 
   }
 
-  def zip[B, C](s: Stream[B]): Stream[(A,B)] = zipWith(s)((_, _))
+  def zip[B, C](s: Stream[B]): Stream[(A, B)] = zipWith(s)((_, _))
 
   def zipWith[B, C](s: Stream[B])(f: (A, B) => C): Stream[C] = {
 
@@ -137,6 +137,35 @@ trait Stream[+A] {
         }
 
       }
+    }
+
+  }
+
+  //Fills up streams with empty positions to equalize length and cover some cornercases
+  def zipWithAll[B, C](s: Stream[B])(f: (Option[A], Option[B]) => C): Stream[C] = {
+
+    val optA = this map (Some(_)) append Stream.constant(None)
+    val optB = s map (Some(_)) append Stream.constant(None)
+
+    Stream.unfold((optA, optB)) {
+
+      case (sa, sb) =>
+
+        (sa.uncons, sb.uncons) match {
+
+          case (Some((ha, ta)), Some((hb, tb))) => Some(f(ha, hb), (ta, tb))
+          case _ => None
+        }
+
+    }
+
+  }
+
+  def startsWith[B](a: Stream[B]): Boolean = {
+
+    zipWithAll(a)((_, _)) takeWhile (!_._2.isEmpty) forAll {
+      case ((Some(a), Some(b))) if a == b => true
+      case _ => false
     }
 
   }

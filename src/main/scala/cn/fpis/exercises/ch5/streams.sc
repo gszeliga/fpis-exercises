@@ -5,7 +5,7 @@ import ch.fpis.exercises.ch5.Stream
 object streams {
 
   Stream(1, 2, 3)                                 //> res0: ch.fpis.exercises.ch5.Stream[Int] = ch.fpis.exercises.ch5.Stream$$anon$
-                                                  //| 2@b23b25c
+                                                  //| 2@53c86be5
 
   Stream(1, 2, 3) map (_ + 2) toList              //> res1: List[Int] = List(3, 4, 5)
 
@@ -55,4 +55,16 @@ object streams {
   Stream(1, 2, 3) zip Stream("Hola", "Que", "Tal") toList
                                                   //> res19: List[(Int, String)] = List((1,Hola), (2,Que), (3,Tal))
 
+  Stream(1, 2, 3,5,6,7).zipWith (Stream(4, 5, 6, 7)) (_ == _) toList
+                                                  //> res20: List[Boolean] = List(false, false, false, false)
+  
+  Stream(1, 2, 3,5,6,7).zipWithAll(Stream(4, 5, 6, 7)) ((_,_)) takeWhile(!_._1.isEmpty) toList
+                                                  //> res21: List[(Option[Int], Option[Int])] = List((Some(1),Some(4)), (Some(2),
+                                                  //| Some(5)), (Some(3),Some(6)), (Some(5),Some(7)), (Some(6),None), (Some(7),No
+                                                  //| ne))
+
+	Stream(1, 2,4,5) startsWith (Stream(1,2,3))
+                                                  //> res22: Boolean = false
+	Stream(1, 2) startsWith (Stream(1,2,3))   //> res23: Boolean = false
+	
 }
