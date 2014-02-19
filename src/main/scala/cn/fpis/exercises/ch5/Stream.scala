@@ -170,6 +170,29 @@ trait Stream[+A] {
 
   }
 
+  def tails: Stream[Stream[A]] = {
+
+    Stream.unfold(this) { s =>
+
+      s.uncons match {
+        case Some((h, t)) => Some(s, t)
+        case _ => None
+      }
+
+    } append Stream(Stream.empty) //It always has to end up with an empty Stream
+
+  }
+
+  def hasSubsequence[B](s: Stream[B]): Boolean = {
+    tails exists (t => t.startsWith(s))
+  }
+
+  def scanRight[B](z: B)(f: (A, => B) => B): Stream[B] =
+    foldRight((z, Stream(z)))((a, p) => {
+      val b2 = f(a, p._1)
+      (b2, Stream.cons(b2, p._2))
+    }) _2
+
 }
 
 object Stream {
