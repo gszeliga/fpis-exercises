@@ -52,6 +52,16 @@ trait RNG {
 
   }
 
+  def flapMap[A, B](f: Rand[A])(g: A => Rand[B]): Rand[B] = {
+
+    rng =>
+      {
+        val (va, na) = f(rng)
+        g(va)(na)
+      }
+
+  }
+
   def positiveMax(n: Int): Rand[Int]
 
 }
@@ -71,6 +81,14 @@ object RNG {
 
       //If it's negative then sum 1 in case we're at Min.MaxValue and then switch sign because -(Int.MaxValue) is not Int.MinValue
       (if (v < 0) -(v + 1) else v, n)
+    }
+
+    def positiveIntWithFlatMap(rng: RNG) {
+
+      rng.flapMap(_.nextInt) {
+        v => rng => (if (v < 0) -(v + 1) else v, rng)
+      }
+
     }
 
     def double(rng: RNG) = {
