@@ -134,6 +134,90 @@ object NonBlocking {
       sequenceBalanced(l.map(asyncF(f)))
     }
 
-  }
+    def choice[A](pIf: Par[Boolean])(pTrue: Par[A], pFalse: Par[A]): Par[A] = {
+      ex =>
+        new Future[A] {
+          def apply(f: A => Unit) = {
+            pIf(ex) { r =>
+              if (r) eval(ex)(pTrue(ex)(f))
+              else eval(ex)(pFalse(ex)(f))
+            }
 
+          }
+        }
+    }
+
+    def choiceN[A](p: Par[Int])(l: List[Par[A]]): Par[A] = {
+      ex =>
+        new Future[A] {
+          def apply(f: A => Unit) = {
+            p(ex) { i =>
+              eval(ex) { l(i)(ex)(f) }
+            }
+          }
+        }
+    }
+
+    def choiceWithChoiceN[A](pIf: Par[Boolean])(pTrue: Par[A], pFalse: Par[A]): Par[A] = {
+
+      ex =>
+        new Future[A] {
+          def apply(f: A => Unit) = {
+            choiceN(map(pIf)(v => if (v) 1 else 0))(List(pFalse, pTrue))
+          }
+        }
+
+    }
+
+    def choiceMap[K, V](pk: Par[K])(pv: Map[K, Par[V]]): Par[V] = {
+      ex =>
+        new Future[V] {
+          def apply(f: V => Unit) = {
+            pk(ex) { k =>
+              eval(ex) { pv(k)(ex)(f) }
+            }
+          }
+        }
+    }
+
+    //Also called bind since actually bound to Pars
+    def flatMap[A, B](p: Par[A])(g: A => Par[B]): Par[B] = {
+
+      ex =>
+        new Future[B] {
+          def apply(f: B => Unit) = {
+            p(ex) { v => eval(ex) { g(v)(ex)(f) } }
+          }
+        }
+
+    }
+
+    def choiceWithFlatMap[A](pIf: Par[Boolean])(pTrue: Par[A], pFalse: Par[A]): Par[A] = {
+      flatMap(pIf) { v => if (v) pTrue else pFalse }
+    }
+
+    def choiceNWithFlatMap[A](p: Par[Int])(l: List[Par[A]]): Par[A] = {
+      flatMap(p)(l)
+    }
+
+    def join[A](p: Par[Par[A]]): Par[A] = {
+      ex =>
+        new Future[A] {
+          def apply(f: A => Unit) = {
+            map(p) { v =>
+              v(ex)(f)
+            }
+          }
+        }
+    }
+
+    def flatMapWithJoin[A, B](p: Par[A])(f: A => Par[B]): Par[B] = {
+      join(map(p)(f))
+    }
+
+    def joinWithFlapMap[A](p: Par[Par[A]]): Par[A] = {
+      flatMap(p) { v => v }
+    }
+
+  }
 }
