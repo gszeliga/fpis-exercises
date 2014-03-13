@@ -1,6 +1,6 @@
 package cn.fpis.exercises.ch6
 
-case class State[S, A](run: S => (A, S)) {
+case class State[S, +A](run: S => (A, S)) {
 
   def map[B](g: A => B): State[S, B] = {
 

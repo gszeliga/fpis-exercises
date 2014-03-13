@@ -7,12 +7,12 @@ trait RNG {
   type Rand[+A] = RNG => (A, RNG)
 
   def nextInt: (Int, RNG)
-  def positiveInt(rng: RNG): (Int, RNG)
-  def double(rng: RNG): (Double, RNG)
+  //def positiveInt(rng: RNG): (Int, RNG)
+  //def double(rng: RNG): (Double, RNG)
   def intDouble(rng: RNG): ((Int, Double), RNG)
   def doubleInt(rng: RNG): ((Double, Int), RNG)
   def double3(rng: RNG): ((Double, Double, Double), RNG)
-  def ints(count: Int)(rng: RNG): (List[Int], RNG)
+  //  def ints(count: Int)(rng: RNG): (List[Int], RNG)
   def ints2(count: Int)(rng: RNG): (List[Int], RNG)
 
   def intDoubleWithMap(rng: RNG): ((Int, Double), RNG)
@@ -76,24 +76,12 @@ object RNG {
       (n, nextRNG) // The return value is a tuple containing both a pseudo-random integer and the next `RNG` state.	    
     }
 
-    def positiveInt(rng: RNG) = {
-      val (v, n) = rng.nextInt
-
-      //If it's negative then sum 1 in case we're at Min.MaxValue and then switch sign because -(Int.MaxValue) is not Int.MinValue
-      (if (v < 0) -(v + 1) else v, n)
-    }
-
     def positiveIntWithFlatMap(rng: RNG) {
 
       rng.flapMap(_.nextInt) {
         v => rng => (if (v < 0) -(v + 1) else v, rng)
       }
 
-    }
-
-    def double(rng: RNG) = {
-      val (i, n) = rng.nextInt
-      (i / (Int.MaxValue.toDouble + 1), n)
     }
 
     def doubleWithMap(rng: RNG) = {
@@ -132,19 +120,6 @@ object RNG {
 
     }
 
-    def ints(count: Int)(rng: RNG) = {
-
-      (0 until count).foldLeft((List.empty[Int], rng)) { (acc, v) =>
-
-        acc match {
-          case (lst, s) => {
-            val (i, n) = s.nextInt
-            (i :: lst, n)
-          }
-        }
-      }
-    }
-
     def ints2(count: Int)(rng: RNG) = {
 
       @tailrec
@@ -175,4 +150,35 @@ object RNG {
     }
 
   }
+
+  def boolean(g: RNG) = {
+    val (v, s) = g.nextInt
+    (if (v > 0) true else false, s)
+  }
+
+  def ints(count: Int)(rng: RNG) = {
+
+    (0 until count).foldLeft((List.empty[Int], rng)) { (acc, v) =>
+
+      acc match {
+        case (lst, s) => {
+          val (i, n) = s.nextInt
+          (i :: lst, n)
+        }
+      }
+    }
+  }
+
+  def positiveInt(rng: RNG) = {
+    val (v, n) = rng.nextInt
+
+    //If it's negative then sum 1 in case we're at Min.MaxValue and then switch sign because -(Int.MaxValue) is not Int.MinValue
+    (if (v < 0) -(v + 1) else v, n)
+  }
+
+  def double(rng: RNG) = {
+    val (i, n) = rng.nextInt
+    (i / (Int.MaxValue.toDouble + 1), n)
+  }
+
 }
