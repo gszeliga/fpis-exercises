@@ -13,6 +13,11 @@ object Monoid {
     def zero = ""
   }
 
+  val intMonoid = new Monoid[Int] {
+    def op(m1: Int, m2: Int) = m1 + m2
+    def zero = 0
+  }
+
   val wordMonoid = new Monoid[String] {
     def op(m1: String, m2: String) = (m1.trim + " " + m2.trim).trim
     def zero = ""
@@ -85,4 +90,26 @@ object Monoid {
   case class This[A](a: A) extends These[A, Nothing]
   case class That[B](b: B) extends These[Nothing, B]
   case class Both[A, B](a: A, b: B) extends These[A, B]
+
+  //Damn Runar did it again
+  //http://blog.higher-order.com/blog/2014/03/19/monoid-morphisms-products-coproducts/
+
+  def functionMonoid[A, B](m: Monoid[B]): Monoid[A => B] = new Monoid[A => B] {
+    def op(m1: A => B, m2: A => B) = a => m.op(m1(a), m2(a))
+    def zero = a => m.zero
+  }
+
+  def mapMergeMonoid[K, V](m: Monoid[V]): Monoid[Map[K, V]] = new Monoid[Map[K, V]] {
+    def zero = Map.empty
+    def op(m1: Map[K, V], m2: Map[K, V]) = {
+      m1.map {
+        case (k, v) => (k, m.op(v, m2.get(k) getOrElse m.zero))
+      }
+    }
+  }
+
+  def frequencyMap(strings: IndexedSeq[String]): Map[String, Int] = {
+    foldMapV[String, Map[String, Int]](strings, mapMergeMonoid(intMonoid))(s => Map(s -> 1))
+  }
+
 }
