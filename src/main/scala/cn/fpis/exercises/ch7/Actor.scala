@@ -62,21 +62,21 @@ final case class Actor[A](strategy: Strategy)(handler: A => Unit, onError: Throw
 
 }
 
-object Actor {
+/*object Actor {
 
   def apply[A](ex: ExecutorService)(handler: A => Unit, onError: Throwable => Unit = throw (_)): Actor[A] = {
     Actor(Strategy.fromExecutor(ex))(handler, onError)
   }
 
 }
-
+*/
 trait Strategy {
   def apply[A](a: => A): () => A
 }
 
 object Strategy {
 
-  def fromExecutor(ex: ExecutorService): Strategy = new Strategy {
+  implicit def fromExecutor(ex: ExecutorService): Strategy = new Strategy {
     def apply[A](a: => A) = {
       val future = ex submit (new Callable[A] { def call = a })
       () => future.get

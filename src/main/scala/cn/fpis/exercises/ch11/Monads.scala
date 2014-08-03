@@ -31,6 +31,22 @@ object Monads {
   }
 
   //https://github.com/pchiusano/fpinscala/blob/master/answers/src/main/scala/fpinscala/monads/Monad.scala
-  val stateMonad = ???
+  //This is what is known as a type lambda
+  def stateMonad[S] = new Monad[({type lambda[x] = State[S,x]})#lambda]{
+    
+    def unit[A](a: => A): State[S,A] = State(s => (a, s))
+    def flatMap[A, B](ma: State[S,A])(f: A => State[S,B]): State[S,B] = ma flatMap f
+    
+  }
+
+  /*
+ * Applying Id to A is an identity since the wrapped type and the unwrapped type are totally isomorphic 
+ * (we can go from one to the other and back again without any loss of information)
+ * */
+  case class Id[A](value: A) {
+    def unit[A](a: => A): Id[A] = Id(a)
+    def flatMap[B](f: A => Id[B]): Id[B] = f(value)
+    def map[B](f: A => B): Id[B] = unit(f(value))
+  }
 
 }
