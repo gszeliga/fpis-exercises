@@ -3,6 +3,7 @@ package cn.fpis.exercises.ch12
 import cn.fpis.exercises.ch11.Functor
 import scala.annotation.tailrec
 import cn.fpis.exercises.ch11.Monad
+import java.util.Date
 
 //A minimal implementation of Applicative must provide apply or map2.
 trait Applicative[F[_]] extends Functor[F] {
@@ -68,4 +69,58 @@ object Applicatives {
     def unit[A](a: => A): Either[E, A] = ???
     def flatMap[A, B](ma: Either[E, A])(f: A => Either[E, B]): Either[E, B] = ???
   }
+
+  //Applicative product??
+  def product[G[_], F[_]](G: Applicative[G]): Applicative[({ type f[x] = (F[x], G[x]) })#f] = ???
+
 }
+
+sealed trait Validation[+E, +A]
+
+case class Failure[E](head: E, tail: Vector[E]) extends Validation[E, Nothing]
+case class Success[A](s: A) extends Validation[Nothing, A]
+case class WebForm(name: String, birthdate: Date, phoneNumber: String)
+
+object Validations {
+
+  private def validationApplicative[E] = new Applicative[({ type f[x] = Validation[E, x] })#f] {
+    def map2[A, B, C](fa: Validation[E, A], fb: Validation[E, B])(f: (A, B) => C): Validation[E, C] = {
+      (fa, fb) match {
+        case (Success(v1), Success(v2)) => Success(f(v1, v2))
+        case (Failure(e1, t1), Failure(e2, t2)) => Failure(e1, t1 ++ (e2 +: t2))
+        case (_, v @ Failure(h, t)) => v
+        case (v @ Failure(h, t), _) => v
+      }
+    }
+    def unit[A](a: A): Validation[E, A] = new Success(a)
+  }
+
+  def validName(name: String): Validation[String, String] = {
+    if (name != "") Success(name)
+    else Failure("Name cannot be empty", Vector.empty)
+  }
+
+  def validateBirthdate(birthdate: String): Validation[String, Date] = {
+    try {
+      import java.text._
+      Success((new SimpleDateFormat("yyyy-MM-dd")).parse(birthdate))
+    } catch {
+      case e: Throwable => Failure("Birthdate must be in the form yyyy-MM-dd", Vector.empty)
+    }
+  }
+
+  def validatePhone(phone: String): Validation[String, String] = {
+    if (phone.matches("[0-9]{10}"))
+      Success(phone)
+    else Failure("Phone number must be 10 digits", Vector.empty)
+  }
+
+  def validate(name: String, birthdate: String, phone: String): Validation[String, WebForm] = {
+
+    val applicative = validationApplicative[String]
+
+    applicative.apply(applicative.apply(applicative.apply(applicative.unit((WebForm(_, _, _)).curried))(validName(name)))(validateBirthdate(birthdate)))(validatePhone(phone))
+  }
+
+}
+

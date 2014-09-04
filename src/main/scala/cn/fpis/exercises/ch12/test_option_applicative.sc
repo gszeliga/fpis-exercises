@@ -14,4 +14,13 @@ object test_option_applicative {
 
   }                                               //> apply: [A, B](oab: Option[A => B])(oa: Option[A])Option[B]
 
+	Validations.validate("Guillermo Szeliga", "2011-11-01", "9988770000")
+                                                  //> res0: cn.fpis.exercises.ch12.Validation[String,cn.fpis.exercises.ch12.WebFor
+                                                  //| m] = Success(WebForm(Guillermo Szeliga,Tue Nov 01 00:00:00 CET 2011,99887700
+                                                  //| 00))
+	Validations.validate("", "201111-01", "88770000")
+                                                  //> res1: cn.fpis.exercises.ch12.Validation[String,cn.fpis.exercises.ch12.WebFor
+                                                  //| m] = Failure(Name cannot be empty,Vector(Birthdate must be in the form yyyy-
+                                                  //| MM-dd, Phone number must be 10 digits))
+
 }
