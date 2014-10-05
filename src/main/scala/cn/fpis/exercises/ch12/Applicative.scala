@@ -4,16 +4,32 @@ import cn.fpis.exercises.ch11.Functor
 import scala.annotation.tailrec
 import cn.fpis.exercises.ch11.Monad
 import java.util.Date
+import cn.fpis.exercises.ch10.Foldable
+import cn.fpis.exercises.ch10.Monoid
 
 //A minimal implementation of Applicative must provide apply or map2.
 trait Applicative[F[_]] extends Functor[F] {
-  def map2[A, B, C](fa: F[A], fb: F[B])(f: (A, B) => C): F[C]
+  def map2[A, B, C](fa: F[A], fb: F[B])(f: (A, B) => C): F[C] = {
+    apply(map(fa)(f.curried))(fb)
+  }
   def apply[A, B](fab: F[A => B])(fa: F[A]): F[B] = {
     map2(fab, fa)((a, b) => a(b))
   }
 
   def map[A, B](fa: F[A])(f: A => B): F[B] = {
     map2(unit(f), fa)(_(_))
+  }
+
+  def sequenceMap2[K, V](ofa: Map[K, F[V]]): F[Map[K, V]] = {
+    ofa.foldLeft(unit(Map.empty[K, V])) { (a, v) =>
+      map2(a, v._2) { (v1, v2) => v1 + (v._1 -> v2) }
+    }
+  }
+
+  def sequenceMap[K, V](ofa: Map[K, F[V]]): F[Map[K, V]] = {
+    ofa.foldLeft(unit(Map.empty[K, V])) {
+      case (fm, (k, fv)) => apply(map(fm) { m => ((p: Map[K, V]) => p ++ m) })(map(fv)(v => Map(k -> v)))
+    }
   }
 
   def unit[A](a: A): F[A]
@@ -42,6 +58,10 @@ trait ApplicativeMonad[M[_]] extends Applicative[M] {
 
   def traverse[A, B](as: List[A])(f: A => M[B]): M[List[B]] = {
     as.foldRight(unit(List.empty[B])) { (a, b) => map2(f(a), b)(_ :: _) }
+  }
+
+  override def map2[A, B, C](ma: M[A], mb: M[B])(f: (A, B) => C): M[C] = {
+    flatMap(ma)(a => map(mb)(f(a, _)))
   }
 
   def replicateM[A](n: Int, fa: M[A]): M[List[A]] = {
@@ -73,6 +93,14 @@ object Applicatives {
   //Applicative product??
   def product[G[_], F[_]](G: Applicative[G]): Applicative[({ type f[x] = (F[x], G[x]) })#f] = ???
 
+  //This type throws away type B and always gives A
+  type Const[A, B] = A
+
+  implicit def monoidApplicative[T](m: Monoid[T]) = new Applicative[({ type f[x] = Const[T, x] })#f] {
+    def unit[A](a: A): T = m.zero
+    override def apply[A, B](m1: T)(m2: T): T = m.op(m1, m2)
+  }
+
 }
 
 sealed trait Validation[+E, +A]
@@ -84,7 +112,7 @@ case class WebForm(name: String, birthdate: Date, phoneNumber: String)
 object Validations {
 
   private def validationApplicative[E] = new Applicative[({ type f[x] = Validation[E, x] })#f] {
-    def map2[A, B, C](fa: Validation[E, A], fb: Validation[E, B])(f: (A, B) => C): Validation[E, C] = {
+    override def map2[A, B, C](fa: Validation[E, A], fb: Validation[E, B])(f: (A, B) => C): Validation[E, C] = {
       (fa, fb) match {
         case (Success(v1), Success(v2)) => Success(f(v1, v2))
         case (Failure(e1, t1), Failure(e2, t2)) => Failure(e1, t1 ++ (e2 +: t2))
@@ -122,5 +150,44 @@ object Validations {
     applicative.apply(applicative.apply(applicative.apply(applicative.unit((WebForm(_, _, _)).curried))(validName(name)))(validateBirthdate(birthdate)))(validatePhone(phone))
   }
 
+}
+
+//A valid instance of Traverse must then override at least either sequence or traverse
+trait Traverse[F[_]] extends Functor[F] with Foldable[F] {
+
+  def sequence[M[_]: Applicative, A](fma: F[M[A]]): M[F[A]] =
+    traverse(fma)(ma => ma)
+
+  def traverse[M[_]: Applicative, A, B](fa: F[A])(f: A => M[B]): M[F[B]] =
+    sequence(map(fa)(f))
+
+  type Id[A] = A
+
+  //Id applicative functor
+  val idMonad = new ApplicativeMonad[Id] {
+    def unit[A](a: A) = a
+    override def flatMap[A, B](ma: A)(f: A => B): B = f(ma)
+  }
+
+  //here, map and traverse are the same operation (in the context of Id applicative functor) 
+  def map[A, B](fa: F[A])(f: A => B): F[B] = {
+    traverse[Id, A, B](fa)(f)(idMonad) // This is evidence that Id => Applicative[Id]
+  }
+
+}
+
+object Traverse {
+  val listTraverse = new Traverse[List] {
+    /*    override def sequence[M[_]: Applicative, A](fma: List[M[A]]): M[List[A]] = {
+      fma.foldRight(M.unit(List.empty[A])) { (v, acc) => }
+    }*/
+
+    override def traverse[M[_], A, B](fa: List[A])(f: A => M[B])(implicit M: Applicative[M]): M[List[B]] = {
+      fa.foldRight(M.unit(List.empty[B])) { (v, acc) =>
+        M.map2(f(v), acc)(_ :: _)
+      }
+    }
+
+  }
 }
 
