@@ -6,6 +6,7 @@ import cn.fpis.exercises.ch11.Monad
 import java.util.Date
 import cn.fpis.exercises.ch10.Foldable
 import cn.fpis.exercises.ch10.Monoid
+import cn.fpis.exercises.ch6.State
 
 //A minimal implementation of Applicative must provide apply or map2.
 trait Applicative[F[_]] extends Functor[F] {
@@ -64,6 +65,10 @@ trait ApplicativeMonad[M[_]] extends Applicative[M] {
     flatMap(ma)(a => map(mb)(f(a, _)))
   }
 
+  override def map[A, B](m: M[A])(f: A => B): M[B] = {
+    flatMap(m) { a => unit(f(a)) }
+  }
+
   def replicateM[A](n: Int, fa: M[A]): M[List[A]] = {
 
     @tailrec
@@ -85,6 +90,19 @@ trait ApplicativeMonad[M[_]] extends Applicative[M] {
 }
 
 object Applicatives {
+
+  def listApplicative = new Applicative[List] {
+    override def apply[A, B](fab: List[A => B])(fa: List[A]): List[B] = {
+      fab.flatMap(f => fa.map(f))
+    }
+    override def unit[A](a: A): List[A] = List(a)
+  }
+
+  def stateMonad[S] = new ApplicativeMonad[({ type f[x] = State[S, x] })#f] {
+    def unit[A](a: A): State[S, A] = State(s => (a, s))
+    override def flatMap[A, B](ma: State[S, A])(f: A => State[S, B]): State[S, B] = ma flatMap f
+  }
+
   def eitherMonad[E] = new Monad[({ type f[x] = Either[E, x] })#f] {
     def unit[A](a: => A): Either[E, A] = ???
     def flatMap[A, B](ma: Either[E, A])(f: A => Either[E, B]): Either[E, B] = ???
@@ -96,6 +114,7 @@ object Applicatives {
   //This type throws away type B and always gives A
   type Const[A, B] = A
 
+  //Const[T,x] == T, and there relies the trick. This way, we can turn a Monoid into an Applicative (usually called 'monoidal functors')
   implicit def monoidApplicative[T](m: Monoid[T]) = new Applicative[({ type f[x] = Const[T, x] })#f] {
     def unit[A](a: A): T = m.zero
     override def apply[A, B](m1: T)(m2: T): T = m.op(m1, m2)
@@ -174,17 +193,83 @@ trait Traverse[F[_]] extends Functor[F] with Foldable[F] {
     traverse[Id, A, B](fa)(f)(idMonad) // This is evidence that Id => Applicative[Id]
   }
 
+  import Applicatives._
+  import cn.fpis.exercises.ch6.State
+
+  override def foldMap[A, B](as: F[A])(f: A => B)(mb: Monoid[B]): B = {
+    traverse[({ type f[x] = Const[B, x] })#f, A, Nothing](as)(f)(monoidApplicative(mb))
+  }
+
+  def traverseS[S, A, B](fa: F[A])(f: A => State[S, B]): State[S, F[B]] = {
+    traverse[({ type f[x] = State[S, x] })#f, A, B](fa)(f)(stateMonad)
+  }
+
+  def zipWithIndex[A](ta: F[A]): F[(A, Int)] = {
+
+    import State._
+
+    traverseS(ta) { a =>
+
+      /*      for {
+        v <- get[Int]
+        _ <- set(v + 1)
+      } yield (a, v)*/
+
+      get[Int].flatMap(v => set(v + 1).map(_ => (a, v)))
+
+    }.run(0)._1
+  }
+
+  override def toList[A](fa: F[A]): List[A] = {
+
+    import State._
+
+    traverseS(fa) { a =>
+      get[List[A]].flatMap(l => set(a :: l))
+    }.run(List.empty[A])._2.reverse //we just want the final state
+
+  }
+
+  //Abstract expression of all previous one: We get the current state, compute the next state, set it, and yield some value
+  def mapAccum[S, A, B](fa: F[A], s: S)(f: (A, S) => (B, S)): (F[B], S) = {
+
+    import State._
+
+    traverseS(fa) { a =>
+      for {
+        cs <- get[S] //get current state
+        (nv, ns) = f(a, cs) //apply current value with current state
+        _ <- set(ns) //save new state
+      } yield nv //return new value
+    }.run(s)
+  }
+
+  def mapAccumToList[A](fa: F[A]): List[A] = {
+    mapAccum(fa, List.empty[A])((a, l) => ((), a :: l))._2
+  }
+
+  def mapAccumZipWithIndex[A](ta: F[A]): F[(A, Int)] = {
+    mapAccum(ta, 0)((a, i) => ((a, i), i + 1))._1
+  }
+
+  def reverse[A](fa: F[A]): F[A] = {
+    mapAccum(fa, toList(fa).reverse) { (_, l) => (l.head, l.tail) }._1
+  }
+
+  override def foldLeft[A, B](fa: F[A])(z: B)(f: (B, A) => B): B = {
+    mapAccum(fa, z) { (v, acc) => (() , f(acc, v)) }._2
+  }
+
 }
 
 object Traverse {
   val listTraverse = new Traverse[List] {
-    /*    override def sequence[M[_]: Applicative, A](fma: List[M[A]]): M[List[A]] = {
-      fma.foldRight(M.unit(List.empty[A])) { (v, acc) => }
-    }*/
 
     override def traverse[M[_], A, B](fa: List[A])(f: A => M[B])(implicit M: Applicative[M]): M[List[B]] = {
+
       fa.foldRight(M.unit(List.empty[B])) { (v, acc) =>
-        M.map2(f(v), acc)(_ :: _)
+        val v1 = M.map2(f(v), acc)(_ :: _)
+        v1
       }
     }
 

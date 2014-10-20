@@ -2,11 +2,15 @@ package cn.fpis.exercises.ch6
 
 case class State[S, +A](run: S => (A, S)) {
 
+  def foreach[U](f: A => U): State[S, U] = {
+    map(f)
+  }
+
   def map[B](g: A => B): State[S, B] = {
 
     flatMap { v => State.unit(g(v)) }
 
-  }
+  } 
 
   def map2[B, C](g: State[S, B])(h: (A, B) => C): State[S, C] = {
 
@@ -24,8 +28,6 @@ case class State[S, +A](run: S => (A, S)) {
 
   }
 
-  def get[S]: State[S, S] = State(s => (s, s))
-
 }
 
 object State {
@@ -39,4 +41,6 @@ object State {
   }
 
   def unit[S, A](a: A): State[S, A] = State(s => (a, s))
+  def get[S]: State[S, S] = State(s => (s, s))
+  def set[S](s: S): State[S, Unit] = State(_ => ((), s))
 }
