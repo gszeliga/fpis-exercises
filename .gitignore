@@ -2,6 +2,7 @@
 *.log
 .classpath
 .project
+.idea
 
 # sbt specific
 dist/*

@@ -27,6 +27,6 @@ object test_option_applicative {
                                                   //> res2: List[(String, Int)] = List((a,0), (b,1), (c,2))
   Traverse.listTraverse.reverse(List("a", "b", "c"))
                                                   //> res3: List[String] = List(c, b, a)
-  Traverse.listTraverse.foldLeft(List("a", "b", "c"))(0)((acc, s) => acc + 1)
-                                                  //> res4: Int = 3
+  Traverse.listTraverse.foldLeft(List("a", "b", "c"))(0)((acc, s) => acc + 2)
+  Traverse.listTraverse.foldLeft(List("a","b"))("-hey!")((acc, v) => acc + v)
 }

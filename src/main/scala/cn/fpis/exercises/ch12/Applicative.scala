@@ -33,6 +33,15 @@ trait Applicative[F[_]] extends Functor[F] {
     }
   }
 
+  def product[G[_]](G: Applicative[G]): Applicative[({type f[x] = (F[x], G[x])})#f] = {
+    val self = this
+    new Applicative[({type f[x] = (F[x], G[x])})#f] {
+      def unit[A](a: A) = (self.unit(a), G.unit(a))
+      override def apply[A,B](fs: (F[A => B], G[A => B]))(p: (F[A], G[A])) =
+        (self.apply(fs._1)(p._1), G.apply(fs._2)(p._2))
+    }
+  }
+
   def unit[A](a: A): F[A]
 }
 
@@ -150,7 +159,7 @@ object Validations {
   def validateBirthdate(birthdate: String): Validation[String, Date] = {
     try {
       import java.text._
-      Success((new SimpleDateFormat("yyyy-MM-dd")).parse(birthdate))
+      Success(new SimpleDateFormat("yyyy-MM-dd").parse(birthdate))
     } catch {
       case e: Throwable => Failure("Birthdate must be in the form yyyy-MM-dd", Vector.empty)
     }
@@ -259,6 +268,28 @@ trait Traverse[F[_]] extends Functor[F] with Foldable[F] {
   override def foldLeft[A, B](fa: F[A])(z: B)(f: (B, A) => B): B = {
     mapAccum(fa, z) { (v, acc) => (() , f(acc, v)) }._2
   }
+
+  def zipL[A,B](fa: F[A], fb: F[B]):F[(A,Option[B])]={
+    (mapAccum(fa, toList(fb)){
+      case (element,Nil) => ((element, Option.empty[B]), Nil)
+      case (element, h :: t) => ((element, Some(h)),t)
+    })._1
+  }
+
+  def zipR[A,B](fa: F[A],fb: F[B]):F[(Option[A],B)]={
+    mapAccum(fb, toList(fa)){
+      case (elem, Nil) => ((Option.empty[A], elem), Nil)
+      case (elem, h :: t) => ((Some(h), elem), t)
+    }._1
+  }
+
+  def fuse[M[_], N[_],A,B](fa: F[A]) (f: A => M[B], g: A => N[B])(M: Applicative[M], N:Applicative[N]): (M[F[B]], N[F[B]])= {
+
+    //Here creates a single type composed by two higher-kinded types as f[x] = (M[x], N[x])
+    traverse[({type f[x] = (M[x], N[x])})#f, A, B](fa)(a => (f(a), g(a)))(M product N)
+
+  }
+
 
 }
 
