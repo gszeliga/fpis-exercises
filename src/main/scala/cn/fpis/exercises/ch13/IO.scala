@@ -34,4 +34,17 @@ object IO extends Monad[IO]{
   override def unit[A](a: => A): IO[A] = new IO[A]{def run = a}
   override def flatMap[A, B](ma: IO[A])(f: (A) => IO[B]): IO[B] = ma flatMap f
   def apply[A](a: => A): IO[A] = unit(a)
+  def ref[A](a: => A): IO[IORef[A]] = IO { new IORef(a) }
+
+  sealed class IORef[A](var value: A) {
+    def set(a: A): IO[A] = IO{value = a; a}
+    def get: IO[A] = IO{value}
+    def modify(f: A => A):IO[A] = get flatMap {a => set(f(a))}
+  }
+
+  def factorial(n: Int) = for{
+    acc <- ref(1)
+    _ <- foreachM(1 to n toStream)(i => skip(acc.modify(_ * i)))
+  } yield(acc.get)
+
 }

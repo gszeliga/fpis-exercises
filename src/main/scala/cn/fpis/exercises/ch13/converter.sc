@@ -12,4 +12,6 @@ def converter: IO[Unit] = {
 
 val t = IO.unit(2) ** IO.unit("AA")
 
+IO.factorial(5).run.run
+
 t.run

@@ -51,6 +51,18 @@ trait Monad[M[_]] extends Functor[M] {
 
   }
 
+
+
+  def foldM[A,B](l: Stream[A])(z: B)(f: (B,A) => M[B]): M[B] = {
+    l match {
+      case h #:: t => flatMap(f(z,h))(foldM(t)(_)(f))
+      case _ => unit(z)
+    }
+  }
+
+  //Why using skip?
+  def foldM_[A,B](l: Stream[A])(f: A => M[Unit]): M[Unit] = foldM(l)(())((a,v) => skip(f(v)))
+
   // Using `sequence` and the `List.fill` function of the standard library:
   def _replicateM[A](n: Int, ma: M[A]): M[List[A]] =
     sequence(List.fill(n)(ma))
@@ -75,5 +87,26 @@ trait Monad[M[_]] extends Functor[M] {
 
   def flatMapJoin[A, B](ma: M[A])(f: A => M[B]): M[B] = join(map(ma)(f))
   def composeJoin[A, B, C](f: A => M[B], g: B => M[C]): A => M[C] = a => join(map(f(a))(b => g(b)))
+
+  def when[A](b: Boolean)(fa: M[A]):M[Boolean] = {
+    if(b) as(fa)(true) else unit(false)
+  }
+
+  def doWhile[A](a: M[A])(cond: A => M[Boolean]): M[Unit] = {
+    flatMap(a){ va => map(cond(va))(if(_) doWhile(a)(cond) else ())}
+  }
+
+  def forever[A,B](a: M[A]): M[B] = {
+    lazy val la: M[B] = forever(a)
+    flatMap(a)(_ => la)
+  }
+
+  def skip[A](ma: M[A]):M[Unit] = as(ma)(())
+
+  def foreachM[A](l: Stream[A])(f: A => M[Unit]): M[Unit] = {
+    foldM_(l){f(_)}
+  }
+
+  def as[A,B](ma: M[A])(b: B): M[B] = map(ma)(_ => b)
 
 }
