@@ -61,7 +61,7 @@ trait Monad[M[_]] extends Functor[M] {
   }
 
   //Why using skip?
-  def foldM_[A,B](l: Stream[A])(f: A => M[Unit]): M[Unit] = foldM(l)(())((a,v) => skip(f(v)))
+  def foldM_[A,B](l: Stream[A])(f: A => M[Unit]): M[Unit] = foldM(l)(())((a,v) => f(v))
 
   // Using `sequence` and the `List.fill` function of the standard library:
   def _replicateM[A](n: Int, ma: M[A]): M[List[A]] =
@@ -92,8 +92,19 @@ trait Monad[M[_]] extends Functor[M] {
     if(b) as(fa)(true) else unit(false)
   }
 
-  def doWhile[A](a: M[A])(cond: A => M[Boolean]): M[Unit] = {
-    flatMap(a){ va => map(cond(va))(if(_) doWhile(a)(cond) else ())}
+  def doWhile[A](ma: M[A])(cond: A => M[Boolean]): M[Unit] = {
+    //Need to use double 'flatMap', otherwise it won't run the second time
+    flatMap(ma){ a => flatMap(cond(a)){c =>
+      println("Continue? " + c)
+      if(c) doWhile(ma)(cond) else unit(())}
+    }
+
+/*    for{
+      a <- ma
+      ok <- cond(a)
+      _ <- if(ok) doWhile(ma)(cond) else unit(())
+    } yield ()*/
+
   }
 
   def forever[A,B](a: M[A]): M[B] = {
@@ -102,6 +113,9 @@ trait Monad[M[_]] extends Functor[M] {
   }
 
   def skip[A](ma: M[A]):M[Unit] = as(ma)(())
+
+  def sequence_[A](s: Stream[M[A]]):M[Unit] = foreachM(s)(skip)
+  def sequence_[A](s: M[A]*): M[Unit] = sequence_(s.toStream)
 
   def foreachM[A](l: Stream[A])(f: A => M[Unit]): M[Unit] = {
     foldM_(l){f(_)}

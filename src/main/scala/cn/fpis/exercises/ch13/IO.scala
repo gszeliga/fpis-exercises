@@ -26,7 +26,10 @@ trait IO[+A] {
 object IO extends Monad[IO]{
 
   def printLine(msg: String) = new IO[Unit]{def run = println(msg)}
-  def readLine2: IO[String] = new IO[String]{def run = scala.io.StdIn.readLine}
+  def readLine2: IO[String] = new IO[String]{def run = {
+    println("Reading...")
+    scala.io.StdIn.readLine}
+  }
 
   def printWinner(p: Player) = printLine(winnerMsg(p))
   def empty: IO[Unit] = new IO[Unit] {def run = ()}
@@ -46,5 +49,24 @@ object IO extends Monad[IO]{
     acc <- ref(1)
     _ <- foreachM(1 to n toStream)(i => skip(acc.modify(_ * i)))
   } yield(acc.get)
+
+
+  val factorialREPL = sequence_(
+    printLine("Enter any number"),
+
+    doWhile(readLine2) { l =>
+
+      val continue= l != 'q
+
+      when(continue) {
+        for {
+          fact <- factorial(l.toInt)
+          _ <- fact flatMap (v => printLine("Result is " + v))
+        } yield ()
+      }
+    }
+  )
+
+
 
 }
