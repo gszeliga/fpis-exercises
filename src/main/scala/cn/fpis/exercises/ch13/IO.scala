@@ -3,6 +3,8 @@ package cn.fpis.exercises.ch13
 import cn.fpis.exercises.ch11.Monad
 import cn.fpis.exercises.ch13.Player.winnerMsg
 
+import scala.annotation.tailrec
+
 /**
  * Created by guillermo on 4/12/14.
  */
@@ -66,7 +68,48 @@ object IO extends Monad[IO]{
       }
     }
   )
+}
 
+trait ExtIO[F[_],+A]
+case class Pure[F[_],+A](a: A) extends ExtIO[F,A]
+//While F[I] is the expression (external side-effect) the receive is the continuation
+case class Request[F[_],I,+A](expr: F[I], receive: I => ExtIO[F,A]) extends ExtIO[F,A]
 
+trait Console[A]
+case object ReadLine extends Console[Option[String]]
+case class PrintLine(l: String) extends Console[Unit]
 
+trait Run[F[_]]{
+  def apply[A](expr: F[A]): (A, Run[F])
+}
+
+object ExtIO
+{
+  @tailrec
+  def run[F[_],A](R: Run[F])(operation: ExtIO[F,A]): A =
+    operation match{
+      case Pure(a) => a
+      case Request(exp, receive) => {
+        R(exp) match {
+          case (result, interpreter) => run(interpreter)(receive(result))
+        }
+      }
+    }
+
+}
+
+object RunConsole extends Run[Console]
+{
+  override def apply[A](expr: Console[A]): (A, Run[Console]) = expr match {
+    case ReadLine => {
+      try{
+        (Some(scala.io.StdIn.readLine()), RunConsole)
+      }
+      catch
+      {
+        case _ : Throwable => (None, RunConsole)
+      }
+    }
+    case PrintLine(s) => (println(s), RunConsole)
+  }
 }
