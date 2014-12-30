@@ -86,8 +86,8 @@ trait Run[F[_]]{
 object ExtIO
 {
   @tailrec
-  def run[F[_],A](R: Run[F])(operation: ExtIO[F,A]): A =
-    operation match{
+  def run[F[_],A](R: Run[F])(operation: ExtIO[F,A]): A = {
+    operation match {
       case Pure(a) => a
       case Request(exp, receive) => {
         R(exp) match {
@@ -95,6 +95,17 @@ object ExtIO
         }
       }
     }
+  }
+
+  def monad[F[_]] = new Monad[({type f[a] = ExtIO[F,a]})#f]{
+    override def unit[A](a: => A): ExtIO[F, A] = new Pure(a)
+    override def flatMap[A, B](ma: ExtIO[F, A])(f: (A) => ExtIO[F, B]): ExtIO[F, B] = {
+      ma match {
+        case Pure(a) => f(a)
+        case Request(expr, receive) => ???
+      }
+    }
+  }
 
 }
 
