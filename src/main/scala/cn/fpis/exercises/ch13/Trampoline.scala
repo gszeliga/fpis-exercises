@@ -1,5 +1,9 @@
 package cn.fpis.exercises.ch13
 
+import java.nio.ByteBuffer
+import java.nio.channels.{CompletionHandler, AsynchronousFileChannel}
+import java.util.concurrent.{Callable, ExecutorService, CountDownLatch}
+
 import scala.annotation.tailrec
 
 /**
@@ -79,10 +83,32 @@ object Trampoline{
 
 //http://xuwei-k.github.io/scalaz-sxr/scalaz-2.9.2-7.0.0/concurrent/concurrent/Future.scala.html
 object NonBlocking{
-/*  def futureMonad = new Monad[Future]{
-    override def unit[A](a: => A): Future[A] = Future(a)
-    override def flatMap[A, B](ma: Future[A])(f: (A) => Future[B]): Future[B] = ma flatMap f
-  }*/
+
+  def apply[A](a: => A) = More(() => Now(a))
+  def apply[A](a: => A)(implicit service : ExecutorService): Future[A] = {
+    Later(f => service submit(new Callable[Unit] {
+      def call() = f(a).run
+    }))
+  }
+
+  def read(file: AsynchronousFileChannel,
+           fromPosition: Long,
+           numBytes: Int): Later[Either[Throwable, Array[Byte]]] = {
+    Later(f => {
+
+      val buffer = ByteBuffer.allocate(numBytes)
+
+      file.read(buffer, fromPosition, (), new CompletionHandler[Integer, Unit] {
+        override def completed(readBytes: Integer, attachment: Unit): Unit = {
+          val result = new Array[Byte](readBytes)
+          buffer.slice().get(result, 0, readBytes)
+          f(Right(result))
+        }
+
+        override def failed(exc: Throwable, attachment: Unit): Unit = f(Left(exc))
+      })
+    })
+  }
 
   trait Future[+A] {
 
@@ -90,8 +116,8 @@ object NonBlocking{
       case Now(a) => More(() => f(a))
       case Later(listen) => BindLater(listen, f)
       case More(force) => BindMore(force, f)
-      case BindLater(listen, g) => BindLater(listen, g andThen (_ flatMap f))
-      case BindMore(force, g) => BindMore(force, g andThen (_ flatMap f))
+      case BindLater(listen, g) => BindLater(listen, g andThen (_ flatMap f)) //Accumulates listeners
+      case BindMore(force, g) => BindMore(force, g andThen (_ flatMap f)) //Accumulates listeners
     }
 
     def map[B](f: A => B): Future[B] = flatMap(a => More(() => Now(f(a))))
@@ -105,7 +131,31 @@ object NonBlocking{
     }
 
     //Runs computation up to obtaining an A
-    def listen(f: A => Trampoline[Unit]): Unit = ???
+    def listen(f: A => Trampoline[Unit]): Unit = {
+      this.step match {
+        case Now(a) => f(a)
+        case Later(listen) => listen(f)
+        case BindLater(listen, g) => {
+          listen(x => Trampoline.delay(g(x)) map (_ listen f))
+        }
+      }
+    }
+
+    def runAsync(f: A => Unit) = listen (a => Trampoline.done(f(a)))
+
+    def run: A = this match{
+      case Now(a) => a
+      case _ => {
+
+        val c = new CountDownLatch(1);
+        @volatile var result = Option.empty[A]
+
+        runAsync(a => {result = Some(a); c.countDown();})
+
+        c.await();
+        result.get
+      }
+    }
 
   }
 
