@@ -37,7 +37,7 @@ sealed trait STRef[S,A]{
 }
 
 object STRef{
-  def apply[S,A](v: => A) = ST(new STRef[S,A] {
+  def apply[S,A](v: => A): ST[S,STRef[S,A]] = ST(new STRef[S,A] {
     protected var cell = v
   })
 }
@@ -53,4 +53,18 @@ object ST{
     }
 
   }
+
+  def runST[A](r: RunnableST[A]): A = {
+    //Call apply on any polymorphic RunnableST by arbitrarily choosing a type for S
+    //When we specify 'Null' we're actually building a RunnableST of that type. That's why we
+    //can call 'run' right away
+    r[Null].run(null)._1
+  }
+
+}
+
+trait RunnableST[A]
+{
+  //This is polimorphic since S will be supplied by the caller
+  def apply[S]: ST[S,A]
 }
