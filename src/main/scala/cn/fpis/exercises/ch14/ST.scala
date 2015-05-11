@@ -6,7 +6,8 @@ package cn.fpis.exercises.ch14
 sealed trait ST[S,A]{
   self =>
 
-  //S represents the ability to mutate state, therefore, it must stay confined
+  //S represents the ability to mutate state, therefore, it must stay confined.
+  //S works as an authorization to mutate or access the cell, but it serves no other purpose.
   protected def run(s:S): (A,S)
 
   def map[B](f: A => B): ST[S,B] = new ST[S,B]{
@@ -58,13 +59,69 @@ object ST{
     //Call apply on any polymorphic RunnableST by arbitrarily choosing a type for S
     //When we specify 'Null' we're actually building a RunnableST of that type. That's why we
     //can call 'run' right away
+
+    //Since the RunnableSlengthT action is polymorphic in S , it's guaranteed to not make use of the
+    // value that gets passed in. So it's actually completely safe to pass null !
     r[Null].run(null)._1
   }
 
 }
 
+//we will introduce a new trait that represents ST actions that are safe to run
+//They don't expose STRef at all
 trait RunnableST[A]
 {
   //This is polimorphic since S will be supplied by the caller
   def apply[S]: ST[S,A]
+}
+
+sealed abstract class STArray[S,A](implicit manifest: Manifest[A]){
+
+  ref =>
+
+  protected def value: Array[A]
+
+  def size: ST[S,Int] = ST(value.size)
+
+  def write(i: Int, v: A):ST[S,Unit] = new ST[S,Unit] {
+    def run(s:S) = {
+      value(i)=v
+      ((),s)
+    }
+  }
+
+  def read(i:Int): ST[S, A] = ST(value(i))
+  def freeze: ST[S, List[A]] = ST(value.toList)
+
+  def fill(xs: Map[Int,A]): ST[S, Unit]= {
+    xs.foldLeft(ST[S, Unit](())){case (acc, (i,v)) => {
+      //We compose a new ST using flatMap (this is the only way to compose a final ST
+      //with all the 'write' operations on it, disregarding the actual incoming parameter
+      acc.flatMap(_ => write (i,v))
+    }}
+  }
+
+  def swap(i: Int, j: Int): ST[S,Unit] = {
+    for {
+      x <- read(i)
+      y <- read(j)
+      _ <- write(j,x)
+      _ <- write(i,y)
+    } yield ()
+  }
+
+}
+
+object STArray{
+  def apply[S,A](sz: Int, v:A): ST[S,STArray[S,A]] = {
+    ST(new STArray[S,A] {
+      lazy val value= Array.fill(sz)(v)
+    })
+  }
+
+  def apply[S,A](sz: Int): ST[S,STArray[S,A]] = {
+    ST(new STArray[S,A] {
+      lazy val value= new Array(sz)
+    })
+  }
 }

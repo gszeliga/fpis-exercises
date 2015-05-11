@@ -26,3 +26,9 @@ val t = new RunnableST[(Int,Int)] {
 }
 
 runST(t)
+
+val value = new RunnableST[Int] {
+ def apply[S] = ST(1)
+}
+
+runST(value)
