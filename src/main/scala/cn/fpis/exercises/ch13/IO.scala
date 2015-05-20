@@ -38,8 +38,26 @@ object IO extends Monad[IO]{
 
   override def unit[A](a: => A): IO[A] = new IO[A]{def run = a}
   override def flatMap[A, B](ma: IO[A])(f: (A) => IO[B]): IO[B] = ma flatMap f
+
   def apply[A](a: => A): IO[A] = unit(a)
   def ref[A](a: => A): IO[IORef[A]] = IO { new IORef(a) }
+
+  def bracket[A,B](acquire: IO[A], release: A => IO[Unit])(using: A => IO[B]): IO[B] = {
+    acquire flatMap(a => {
+      //TODO This won't catch any exceptions that might prevent the resource from being released!
+      using(a) flatMap (b => release(a) map(_ => b))
+    })
+  }
+
+  def betterBracket[A,B](acquire: IO[A], release: A => IO[Unit])(using: A => IO[B]): IO[B] = {
+    acquire flatMap(a => {
+      try {
+        using(a)
+      }finally {
+        release(a)
+      }
+    })
+  }
 
   sealed class IORef[A](var value: A) {
     def set(a: A): IO[A] = IO{value = a; a}
@@ -117,9 +135,9 @@ object RunConsole extends Run[Console]
         (Some(scala.io.StdIn.readLine()), RunConsole)
       }
       catch
-      {
-        case _ : Throwable => (None, RunConsole)
-      }
+        {
+          case _ : Throwable => (None, RunConsole)
+        }
     }
     case PrintLine(s) => (println(s), RunConsole)
   }
