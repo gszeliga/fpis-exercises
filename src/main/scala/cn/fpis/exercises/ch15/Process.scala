@@ -60,6 +60,56 @@ trait Process[I,O]{
     }
   }
 
+  def lift[I,O](f: I => O): Process[I,O] = {
+    /*Await(i => i.map( v => Emit[I,O](f(v))).getOrElse(Halt()))*/
+
+    Await({
+      case Some(v) => Emit(f(v))
+      case None => Halt()
+    })
+  }
+
+  def repeat: Process[I,O] = {
+
+    def go(p: Process[I,O]): Process[I,O] = {
+      p match{
+        case Halt() => go(this)
+        case Emit(h,t) => Emit(h, go(t))
+        case Await(r,f) => Await(r andThen go,f)
+      }
+    }
+
+    go(this)
+  }
+
+  def filter[I,O](f: I => Boolean) = Await[I,I]({
+    case Some(v) if f(v) => Emit(v)
+    case None => Halt()
+  }) repeat
+
+  def take[I](n: Int): Process[I,I] = {
+    if(n <= 0) Halt()
+    else{
+      Await[I,I](_.map(i => Emit(i, take[I](n-1))).getOrElse(Halt()))
+    }
+  }
+
+  //Echoes back the incoming input
+  def id[I]: Process[I,I] = lift(identity)
+
+  def drop[I](n: Int): Process[I,I] = {
+    if(n == 0) id //emits the input as it comes in (cool shit)
+    else Await[I,I](_ => drop(n-1))
+  }
+
+  def takeWhile[I](f: I => Boolean): Process[I,I] = {
+    Await[I,I](_.map(i => if(f(i)) Emit[I,I](i, takeWhile(f)) else Halt[I,I]()).getOrElse(Halt()))
+  }
+
+  def dropWhile[I](f: I => Boolean): Process[I,I] = {
+    Await(_.map(i => if(f(i)) dropWhile(f) else Emit[I,I](i) ).getOrElse(Halt()))
+  }
+
 }
 
 object Process{
@@ -87,6 +137,6 @@ case class Emit[I,O](head: O, tail: Process[I,O] = Halt[I,O]) extends Process[I,
 /*
 * Requests a value from the input stream, indicating that 'recv'
 should be used by the driver to produce the next state, and that finalizer should be
-consulted if the input has no more elements available.
+consulted if the input has no more elements available. (pull oriented approach)
 * */
 case class Await[I,O](recv: Option[I] => Process[I,O], finalizer: Process[I,O] = Halt[I,O]) extends Process[I,O]
