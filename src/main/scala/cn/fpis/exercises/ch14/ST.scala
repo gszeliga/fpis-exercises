@@ -112,6 +112,7 @@ sealed abstract class STArray[S,A](implicit manifest: Manifest[A]){
 
 }
 
+/*
 object STArray{
   def apply[S,A](sz: Int, v:A): ST[S,STArray[S,A]] = {
     ST(new STArray[S,A] {
@@ -124,4 +125,4 @@ object STArray{
       lazy val value= new Array(sz)
     })
   }
-}
+}*/

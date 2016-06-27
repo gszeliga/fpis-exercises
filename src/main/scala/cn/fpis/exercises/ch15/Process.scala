@@ -1,6 +1,9 @@
 package cn.fpis.exercises.ch15
 
 import cn.fpis.exercises.ch11.Monad
+import cn.fpis.exercises.ch15.Process.lift
+
+import scala.language.postfixOps
 
 /*
 This is a Transducer: It transforms a Stream containing 'I' values into a Stream of 'O' values
@@ -13,7 +16,7 @@ trait Process[I,O]{
       case h #:: t => recv(Some(h))(t) //We keep the interpretation loop by passing tail to 'apply'
       case _ => finalizer(s)
     }
-    case Emit(h,t) => Stream(h) append t(s)
+    case Emit(h,t) => h #:: t(s)
   }
 
   def map[O2](f: O => O2): Process[I,O2] = this match {
@@ -60,56 +63,142 @@ trait Process[I,O]{
     }
   }
 
-  def lift[I,O](f: I => O): Process[I,O] = {
-    /*Await(i => i.map( v => Emit[I,O](f(v))).getOrElse(Halt()))*/
-
-    Await({
-      case Some(v) => Emit(f(v))
-      case None => Halt()
-    })
-  }
-
   def repeat: Process[I,O] = {
 
     def go(p: Process[I,O]): Process[I,O] = {
       p match{
         case Halt() => go(this)
         case Emit(h,t) => Emit(h, go(t))
-        case Await(r,f) => Await(r andThen go,f)
+        case Await(r,f) => Await({
+          case None => r(None)
+          case s@Some(v) => go(r(s))
+        },f)
       }
     }
 
     go(this)
   }
 
+  def take[I](n: Int): Process[I,I] = {
+
+    if(n == 0) Halt()
+    else {
+      Await[I,I]({
+        case None => Halt()
+        case Some(v) => Emit(v, take(n-1))
+      })
+    }
+
+  }
+
+  def drop[I](n: Int): Process[I,I] = {
+    if(n == 0) id  //emits the input as it comes in (cool shit)
+    else {
+      Await[I, I]({
+        case None => Halt()
+        case Some(v) => drop(n - 1)
+      })
+    }
+  }
+
+  def takeWhile[I](f: I => Boolean): Process[I,I] = {
+    Await[I,I]({
+      case Some(v) if f(v) => Emit(v, takeWhile(f))
+      case _ => Halt()
+    })
+  }
+
+  def dropWhile[I](f: I => Boolean): Process[I,I] = {
+    Await[I,I]({
+      case Some(v) if f(v) => dropWhile(f)
+      case Some(v) => Emit(v, id)
+      case None => Halt()
+    })
+  }
+
+  def count[I]: Process[I, Int] = {
+    def go(c: Int): Process[I, Int] = {
+      Await[I, Int](_ => Emit(c+1,go(c+1)))
+    }
+
+    go(0)
+  }
+
+  def loop[S,I,O](z: S)(f: (I,S) => (O,S)): Process[I,O] = {
+    Await[I,O]({
+      case None => Halt()
+      case Some(v) => f(v,z) match {
+        case ((o,s)) => Emit(o, loop(s)(f))
+      }
+    })
+  }
+
+  def countWithLoop[I]: Process[I, Int] = loop(0)({
+    case ((_,s)) => (s+1,s+1)
+  })
+
   def filter[I,O](f: I => Boolean) = Await[I,I]({
     case Some(v) if f(v) => Emit(v)
     case None => Halt()
   }) repeat
 
-  def take[I](n: Int): Process[I,I] = {
-    if(n <= 0) Halt()
-    else{
-      Await[I,I](_.map(i => Emit(i, take[I](n-1))).getOrElse(Halt()))
-    }
-  }
-
   //Echoes back the incoming input
   def id[I]: Process[I,I] = lift(identity)
 
-  def drop[I](n: Int): Process[I,I] = {
-    if(n == 0) id //emits the input as it comes in (cool shit)
-    else Await[I,I](_ => drop(n-1))
+  def sum: Process[Double,Double] = {
+    def go(s: Double): Process[Double, Double] = {
+      //We emit the partial result and define as tail the next state to be accumulated
+      Await{
+        case Some(v) => Emit(v+s,go(v+s))
+        case None => Halt()
+      }
+    }
+
+    go(0.0)
   }
 
-  def takeWhile[I](f: I => Boolean): Process[I,I] = {
-    Await[I,I](_.map(i => if(f(i)) Emit[I,I](i, takeWhile(f)) else Halt[I,I]()).getOrElse(Halt()))
+/*  def loop[S,I,O](z: S)(f: (S,I) => (S,O)): Process[I,O] = {
+    Await(_.map(i => f(z,i) match {
+      case (s,o) => emit(o,loop(s)(f))
+    }).getOrElse(Halt()))
+  }*/
+
+  def sum2: Process[Double,Double] = loop(0.0)((acc,v) => (acc+v,acc+v))
+  def count2[I]: Process[I,Int] = loop(0)((acc,_) => (acc+1,acc+1))
+
+  //Zip feeds the same input to two different processes
+  def zip[A,B,C](p1: Process[A,B])(p2: Process[A,C]): Process[A, (B,C)] = {
+    (p1, p2) match {
+      case (Halt(), _) => Halt()
+      case (_, Halt()) => Halt()
+      case (Emit(h1,t1), Emit(h2,t2)) => Emit((h1,h2), zip(t1)(t2))
+      case (Await(recv1,f),_) => Await(v => zip(recv1(v))(feed(v)(p2)))
+      case (_, Await(recv2,f)) => Await(v => zip(feed(v)(p1))(recv2(v)))
+    }
   }
 
-  def dropWhile[I](f: I => Boolean): Process[I,I] = {
-    Await(_.map(i => if(f(i)) dropWhile(f) else Emit[I,I](i) ).getOrElse(Halt()))
+  def feed[A,B](v: Option[A])(p: Process[A,B]): Process[A,B] = p match{
+    case Halt() => Halt()
+    case Emit(h,t) => emit(h, feed(v)(t))
+    /*case Await(r,f) => Await(k => feed(k)(r(v))) Does it get into an infinite loop?*/
+    case Await(r,f) => r(v)
   }
 
+  def zipWithIndex: Process[I,(O,Int)] = zip(this)(count)
+
+  def exists[I](f: I => Boolean): Process[I, Boolean] = {
+    //lift(f) will emit result result of applying the criteria
+    //Whenever the result is 'true' it will turn the outcome of the loop as true
+    lift(f) |> loop(false)((s,v) => (s || v, s || v))
+  }
+
+  //Does it actually work?
+  def exists2[I](f: I => Boolean): Process[I,Boolean] = {
+    takeWhile[I](i => !f(i)) match {
+      case Halt() => Emit(false)
+      case _ => Emit(true)
+    }
+  }
 }
 
 object Process{
@@ -119,6 +208,15 @@ object Process{
     override def unit[O](v: => O): Process[I, O] = Emit(v)
     override def flatMap[O, O2](ma: Process[I, O])(f: (O) => Process[I, O2]): Process[I, O2] = ma flatMap f
   }
+
+  def liftOne[I,O](f: I => O): Process[I,O] = {
+    Await({
+      case Some(v) => Emit(f(v))
+      case None => Halt()
+    })
+  }
+
+  def lift[I,O](f: I => O): Process[I,O] = liftOne(f).repeat
 
   implicit def toMonadic[I,O](p: Process[I,O]) = monad[I].toMonadic(p)
 
