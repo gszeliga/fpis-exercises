@@ -1,8 +1,10 @@
 package cn.fpis.exercises.ch15
 
 import cn.fpis.exercises.ch11.Monad
+import cn.fpis.exercises.ch13.IO
 import cn.fpis.exercises.ch15.Process.lift
 
+import scala.io.BufferedSource
 import scala.language.postfixOps
 
 /*
@@ -41,15 +43,15 @@ trait Process[I,O]{
 
   def emit[I,O](head: O, tail: Process[I,O] = Halt[I,O]):Process[I,O] = Emit(head,tail)
 
-  def flatMap[O2](f: O => Process[I,O2]): Process[I,O2] = this match {
+/*  def flatMap[O2](f: O => Process[I,O2]): Process[I,O2] = this match {
     case Halt() => Halt()
     case Emit(h,t) => f(h) ++ t.flatMap(f)
     case Await(recv, finalizer) => Await(i => recv(i) flatMap f, finalizer flatMap f)
-  }
+  }*/
 
   def unit[I,O](v:O): Process[I,O] = emit(v)
 
-  //'pipe' or 'compose'
+/*  //'pipe' or 'compose'
   def |>[O2](p2: Process[O,O2]): Process[I,O2] = {
 
     p2 match {
@@ -61,7 +63,7 @@ trait Process[I,O]{
         case Await(g,finalizer2) =>  Await(i => g(i) |> p2)
       }
     }
-  }
+  }*/
 
   def repeat: Process[I,O] = {
 
@@ -133,9 +135,44 @@ trait Process[I,O]{
     })
   }
 
-  def countWithLoop[I]: Process[I, Int] = loop(0)({
+  def countInTermsOfLoop[I]: Process[I, Int] = loop(0)({
     case ((_,s)) => (s+1,s+1)
   })
+
+  def sumInTermsOfLoop: Process[Int, Int] = loop(0)({
+    case ((v,s)) => (s+v, s+v)
+  })
+
+  //'pipe' or 'compose'
+  def |> [O2](p2: Process[O,O2]): Process[I,O2] = {
+
+    p2 match {
+      case Emit(h,t) => Emit(h, this |> t)
+      case Await(r,f) => this match {
+        case Halt() => Halt() |> r(None)
+        case Emit(h,t) =>  t |> r(Option(h))
+        case Await(r1,f1) => Await[I,O2](v => r1(v) |> p2) //'p2' here is 'Await' too so we just need to combine them both
+      }
+      case Halt() => Halt()
+    }
+  }
+
+  def map2[O2](f: O => O2): Process[I,O2] = this |> lift(f)
+
+  //append
+  def ++(p2: Process[I,O]): Process[I,O] = {
+    this match {
+      case Halt() => p2
+      case Emit(h,t) => Emit(h, t ++ p2)
+      case Await(r,f) => Await[I,O](v => r(v) ++ p2)
+    }
+  }
+
+  def flatMap[O2](f: O => Process[I,O2]): Process[I, O2] = this match {
+    case Halt() => Halt()
+    case Emit(h,t) => f(h) ++ t.flatMap(f)
+    case Await(r,fi) => Await[I,O2](v => r(v).flatMap(f))
+  }
 
   def filter[I,O](f: I => Boolean) = Await[I,I]({
     case Some(v) if f(v) => Emit(v)
@@ -148,7 +185,7 @@ trait Process[I,O]{
   def sum: Process[Double,Double] = {
     def go(s: Double): Process[Double, Double] = {
       //We emit the partial result and define as tail the next state to be accumulated
-      Await{
+      Await[Double, Double]{
         case Some(v) => Emit(v+s,go(v+s))
         case None => Halt()
       }
@@ -157,17 +194,30 @@ trait Process[I,O]{
     go(0.0)
   }
 
-/*  def loop[S,I,O](z: S)(f: (S,I) => (S,O)): Process[I,O] = {
-    Await(_.map(i => f(z,i) match {
-      case (s,o) => emit(o,loop(s)(f))
-    }).getOrElse(Halt()))
-  }*/
+  def zip[O2](p1: Process[I,O2]): Process[I,(O,O2)] = {
 
-  def sum2: Process[Double,Double] = loop(0.0)((acc,v) => (acc+v,acc+v))
-  def count2[I]: Process[I,Int] = loop(0)((acc,_) => (acc+1,acc+1))
+    (this, p1) match {
+
+      case (_, Halt()) => Halt()
+      case (Halt(), _) => Halt()
+      case (Emit(h1,t1), Emit(h2,t2)) => Emit((h1,h2), t1 zip t2)
+      case (Await(recv,f), _) => Await[I,(O,O2)](v => recv(v) zip p1)
+      case (_, Await(recv,f)) => Await[I,(O,O2)](v => this zip recv(v))
+
+    }
+  }
+
+  def zipWithIndex: Process[I, (O, Int)] = this zip count
+
+  def exists[I](f: I => Boolean): Process[I, Boolean] = {
+    //lift(f) will emit result result of applying the criteria
+    //Whenever the result is 'true' it will turn the outcome of the loop as true
+    lift(f) |> loop(false)((v,s) => (v || s, v || s))
+  }
+
 
   //Zip feeds the same input to two different processes
-  def zip[A,B,C](p1: Process[A,B])(p2: Process[A,C]): Process[A, (B,C)] = {
+ /* def zip[A,B,C](p1: Process[A,B])(p2: Process[A,C]): Process[A, (B,C)] = {
     (p1, p2) match {
       case (Halt(), _) => Halt()
       case (_, Halt()) => Halt()
@@ -175,7 +225,7 @@ trait Process[I,O]{
       case (Await(recv1,f),_) => Await(v => zip(recv1(v))(feed(v)(p2)))
       case (_, Await(recv2,f)) => Await(v => zip(feed(v)(p1))(recv2(v)))
     }
-  }
+  }*/
 
   def feed[A,B](v: Option[A])(p: Process[A,B]): Process[A,B] = p match{
     case Halt() => Halt()
@@ -184,21 +234,8 @@ trait Process[I,O]{
     case Await(r,f) => r(v)
   }
 
-  def zipWithIndex: Process[I,(O,Int)] = zip(this)(count)
+  /*def zipWithIndex: Process[I,(O,Int)] = zip(this)(count)*/
 
-  def exists[I](f: I => Boolean): Process[I, Boolean] = {
-    //lift(f) will emit result result of applying the criteria
-    //Whenever the result is 'true' it will turn the outcome of the loop as true
-    lift(f) |> loop(false)((s,v) => (s || v, s || v))
-  }
-
-  //Does it actually work?
-  def exists2[I](f: I => Boolean): Process[I,Boolean] = {
-    takeWhile[I](i => !f(i)) match {
-      case Halt() => Emit(false)
-      case _ => Emit(true)
-    }
-  }
 }
 
 object Process{
@@ -220,6 +257,34 @@ object Process{
 
   implicit def toMonadic[I,O](p: Process[I,O]) = monad[I].toMonadic(p)
 
+
+  def processFile[A,B](f: java.io.File, p: Process[String,A], z: B)(g: (B,A) => B): IO[B] = IO {
+
+    def go(it: Iterator[String], cur: Process[String, A], acc: B): B = {
+
+      cur match {
+        case Halt() => acc
+        case Emit(h,t) => go(it, cur, g(acc,h))
+        case Await(recv,f) => {
+          if(it.hasNext){
+            go(it, recv(Option(it.next())),acc)
+          }
+          else{
+            go(it, recv(None), acc)
+          }
+        }
+      }
+    }
+
+    val source = io.Source.fromFile(f)
+
+    try
+      go(source.getLines(),p,z)
+    finally
+      source.close()
+
+  }
+
 }
 
 /*
@@ -230,11 +295,11 @@ case class Halt[I,O]() extends Process[I,O]
 
 /*Indicates to the driver that the head values should be emitted to the output stream,
  and that tail should be the next state following that*/
-case class Emit[I,O](head: O, tail: Process[I,O] = Halt[I,O]) extends Process[I,O]
+case class Emit[I,O](head: O, tail: Process[I,O] = Halt[I,O]()) extends Process[I,O]
 
 /*
 * Requests a value from the input stream, indicating that 'recv'
 should be used by the driver to produce the next state, and that finalizer should be
 consulted if the input has no more elements available. (pull oriented approach)
 * */
-case class Await[I,O](recv: Option[I] => Process[I,O], finalizer: Process[I,O] = Halt[I,O]) extends Process[I,O]
+case class Await[I,O](recv: Option[I] => Process[I,O], finalizer: Process[I,O] = Halt[I,O]()) extends Process[I,O]
